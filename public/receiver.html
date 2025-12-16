@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Go-WebRTC 观众端</title>
+    <style>
+        body { text-align: center; background: #eee; font-family: sans-serif; }
+        video { width: 90%; max-width: 600px; background: #000; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h2>🍿 我是观众</h2>
+    <p>请确保主播已点击“开始直播”</p>
+    <video id="remoteVideo" autoplay playsinline controls></video>
+    <div id="status">连接服务器中...</div>
+
+    <script>
+        const host = window.location.hostname;
+        const port = window.location.port;
+        // 为每个观众生成一个简单的唯一 ID，用于区分不同观众
+        const viewerId = 'v-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+        const ws = new WebSocket(`ws://${host}:${port}/ws?role=receiver&id=${encodeURIComponent(viewerId)}`);
+        
+        let peerConnection;
+        const config = {
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        };
+
+        ws.onopen = () => {
+            document.getElementById('status').innerText = "已连接，通知主播自动开始直播...";
+            // 新观众一接入就通过 WebSocket 告诉主播“我准备好了”，触发主播自动为当前 viewerId 建立连接
+            ws.send(JSON.stringify({ type: 'ready', data: null }));
+        };
+
+        ws.onmessage = async (event) => {
+            const msg = JSON.parse(event.data);
+
+            if (!peerConnection) createPeerConnection();
+
+            if (msg.type === 'offer') {
+                console.log("收到 Offer，准备应答...");
+                document.getElementById('status').innerText = "正在建立视频连接...";
+                
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(msg.data));
+                
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+                
+                // 发送 Answer 回去（后端会自动带上当前连接的 viewerId）
+                ws.send(JSON.stringify({ type: 'answer', data: answer }));
+
+            } else if (msg.type === 'candidate') {
+                console.log("收到 ICE Candidate");
+                await peerConnection.addIceCandidate(new RTCIceCandidate(msg.data));
+            }
+        };
+
+        function createPeerConnection() {
+            peerConnection = new RTCPeerConnection(config);
+
+            // 当收到远端流时，播放它
+            peerConnection.ontrack = (event) => {
+                const video = document.getElementById('remoteVideo');
+                video.srcObject = event.streams[0];
+            };
+
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    ws.send(JSON.stringify({ type: 'candidate', data: event.candidate }));
+                }
+            };
+        }
+    </script>
+</body>
+</html>

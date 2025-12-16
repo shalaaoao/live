@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Go-WebRTC 主播端</title>
+    <style>
+        body { text-align: center; background: #222; color: #fff; font-family: sans-serif; }
+        video { width: 90%; max-width: 600px; background: #000; border: 2px solid #444; }
+        #log { color: #aaa; font-size: 12px; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <h2>🎥 我是主播</h2>
+    <video id="localVideo" autoplay playsinline muted></video>
+    <p id="status">正在连接服务器...</p>
+    <div id="log"></div>
+
+    <script>
+        const host = window.location.hostname;
+        const port = window.location.port;
+        // 连接 Go WebSocket（主播端只需要一条信令连接）
+        const ws = new WebSocket(`ws://${host}:${port}/ws?role=sender`);
+        
+        let localStream;
+        // 一个观众一个 PeerConnection，通过 viewerId 区分
+        const peers = {}; // { [viewerId]: RTCPeerConnection }
+        
+        // 使用 Google 的公共 STUN 服务器 (帮助穿透 NAT)
+        const config = {
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        };
+
+        ws.onopen = () => {
+            document.getElementById('status').innerText = "服务器已连接，等待获取摄像头...";
+            startCamera();
+        };
+
+        ws.onmessage = async (event) => {
+            const msg = JSON.parse(event.data);
+            const viewerId = msg.viewerId;
+
+            if (!viewerId) {
+                console.warn("收到没有 viewerId 的消息，忽略：", msg);
+                return;
+            }
+
+            // 观众通过 WS 告诉“我已经准备好观看”，为该 viewerId 建立/重建连接
+            if (msg.type === 'ready') {
+                console.log("收到观众就绪信号，viewerId =", viewerId);
+
+                if (!localStream) {
+                    // 确保已经获取摄像头
+                    await startCamera();
+                }
+
+                await startCall(viewerId, true); // 针对该观众自动开始
+                return;
+            }
+
+            let pc = peers[viewerId];
+            if (!pc) {
+                pc = createPeerConnection(viewerId);
+            }
+
+            if (msg.type === 'answer') {
+                console.log("收到 Answer, viewerId =", viewerId);
+                await pc.setRemoteDescription(new RTCSessionDescription(msg.data));
+            } else if (msg.type === 'candidate') {
+                console.log("收到 ICE Candidate, viewerId =", viewerId);
+                await pc.addIceCandidate(new RTCIceCandidate(msg.data));
+            }
+        };
+
+        async function startCamera() {
+            try {
+                // 默认使用后置摄像头（environment），更适合做直播
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: { ideal: 'environment' } },
+                    audio: true
+                });
+                document.getElementById('localVideo').srcObject = localStream;
+                document.getElementById('status').innerText = "摄像头就绪，等待观众...";
+            } catch (e) {
+                alert("摄像头启动失败！请确保使用 HTTPS 或已在 Chrome Flags 中允许不安全源。");
+                console.error(e);
+            }
+        }
+
+        // 一个观众一个 PeerConnection，通过 viewerId 管理多个观众
+    </script>
+    
+    <br/>
+    <!-- 按钮保留为调试使用：可以手动指定某个 viewerId 开始推流（需要在控制台调用 startCall('某个id')） -->
+    <button onclick="alert('现在观众进入页面会自动触发直播，如需手动调试请在控制台调用 startCall(viewerId)');" style="padding:10px 20px; font-size:16px;">📡 说明：现在自动直播，无需点击</button>
+
+    <script>
+        function createPeerConnection(viewerId) {
+            const pc = new RTCPeerConnection(config);
+
+            // 添加本地流轨道
+            localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+            // 当发现网络路径候选者时，发给对应的观众
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    ws.send(JSON.stringify({
+                        type: 'candidate',
+                        data: event.candidate,
+                        viewerId: viewerId
+                    }));
+                }
+            };
+
+            // 可选：监听连接状态变化，便于调试
+            pc.onconnectionstatechange = () => {
+                console.log(`viewerId=${viewerId} 连接状态:`, pc.connectionState);
+                if (pc.connectionState === 'failed' || pc.connectionState === 'closed' || pc.connectionState === 'disconnected') {
+                    // 出问题时可以清理
+                    delete peers[viewerId];
+                }
+            };
+
+            peers[viewerId] = pc;
+            return pc;
+        }
+
+        async function startCall(viewerId, auto = false) {
+            if (!localStream) {
+                return alert("摄像头未就绪");
+            }
+            if (!viewerId) {
+                return alert("缺少 viewerId，无法针对具体观众建立连接");
+            }
+
+            let pc = peers[viewerId];
+            if (!pc) {
+                pc = createPeerConnection(viewerId);
+            }
+
+            document.getElementById('status').innerText = auto
+                ? `检测到新观众 (${viewerId})，自动开始直播...`
+                : `正在呼叫观众 (${viewerId})...`;
+            
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            
+            // 发送 Offer 给对应的观众
+            ws.send(JSON.stringify({
+                type: 'offer',
+                data: offer,
+                viewerId: viewerId
+            }));
+        }
+    </script>
+</body>
+</html>
