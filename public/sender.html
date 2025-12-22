@@ -75,9 +75,14 @@
 
         async function startCamera() {
             try {
-                // 默认使用后置摄像头（environment），更适合做直播
+                // 使用较宽松的分辨率设置，避免设备不兼容
                 localStream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: currentFacingMode },
+                    video: { 
+                        facingMode: currentFacingMode,
+                        width: { ideal: 1280, min: 640 },
+                        height: { ideal: 720, min: 480 },
+                        frameRate: { ideal: 30, min: 15 }
+                    },
                     audio: true
                 });
                 document.getElementById('localVideo').srcObject = localStream;
@@ -103,7 +108,12 @@
                 
                 // 获取新的视频流
                 const newStream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: currentFacingMode },
+                    video: { 
+                        facingMode: currentFacingMode,
+                        width: { ideal: 1280, min: 640 },
+                        height: { ideal: 720, min: 480 },
+                        frameRate: { ideal: 30, min: 15 }
+                    },
                     audio: false
                 });
                 const newVideoTrack = newStream.getVideoTracks()[0];
@@ -124,6 +134,20 @@
                     const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
                     if (sender) {
                         await sender.replaceTrack(newVideoTrack);
+                        // 更新编码参数
+                        try {
+                            const params = sender.getParameters();
+                            if (!params.encodings || params.encodings.length === 0) {
+                                params.encodings = [{}];
+                            }
+                            if (params.encodings[0]) {
+                                params.encodings[0].maxBitrate = 20000000; // 20000 kbps
+                                params.encodings[0].maxFramerate = 30;
+                            }
+                            await sender.setParameters(params);
+                        } catch (e) {
+                            console.warn('更新编码参数失败:', e);
+                        }
                     }
                 }
                 
@@ -194,6 +218,25 @@
             
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
+            
+            // 在 setLocalDescription 之后设置编码器参数
+            try {
+                const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+                if (sender && sender.getParameters) {
+                    const params = sender.getParameters();
+                    if (!params.encodings || params.encodings.length === 0) {
+                        params.encodings = [{}];
+                    }
+                    // 设置较高的码率，但不过高以免网络问题
+                    if (params.encodings[0]) {
+                        params.encodings[0].maxBitrate = 20000000; // 20000 kbps
+                        params.encodings[0].maxFramerate = 30;
+                    }
+                    await sender.setParameters(params);
+                }
+            } catch (e) {
+                console.warn('设置编码参数失败（不影响连接）:', e);
+            }
             
             // 发送 Offer 给对应的观众
             ws.send(JSON.stringify({

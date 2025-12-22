@@ -50,6 +50,18 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	mutex.Lock()
 	if role == "sender" {
 		senderConn = conn
+		// 主播刚连上时，把当前所有已在线观众的 ready 状态推送给主播，
+		// 避免观众先连、主播后连时，早期的 ready 消息丢失。
+		for id := range receivers {
+			readyMsg := SignalMessage{
+				Type:     "ready",
+				Data:     nil,
+				ViewerID: id,
+			}
+			if err := senderConn.WriteJSON(readyMsg); err != nil {
+				log.Println("向主播发送历史观众 ready 失败:", err, "viewerId =", id)
+			}
+		}
 	} else if role == "receiver" {
 		if viewerID != "" {
 			receivers[viewerID] = conn
