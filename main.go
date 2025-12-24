@@ -129,10 +129,12 @@ func main() {
 	http.Handle("/", fs)
 
 	port := ":8080"
-	fmt.Printf("Go 服务器启动! \n请在手机浏览器访问 http://你的电脑IP%s/sender.html (主播)\n", port)
-	fmt.Printf("请在手机浏览器访问 http://你的电脑IP%s/receiver.html (观众)\n", port)
+	fmt.Printf("Go 服务器启动 (HTTPS)! \n请在手机浏览器访问 https://你的电脑IP%s/sender.html (主播)\n", port)
+	fmt.Printf("请在手机浏览器访问 https://你的电脑IP%s/receiver.html (观众)\n", port)
+	fmt.Println("\n注意：如果使用自签名证书，浏览器会显示安全警告，需要手动点击'继续访问'或'高级'->'继续访问'")
 
-	err := http.ListenAndServe(port, nil)
+	// 使用 HTTPS
+	err := http.ListenAndServeTLS(port, "server.crt", "server.key", nil)
 	if err != nil {
 		log.Fatal("服务器启动失败: ", err)
 	}

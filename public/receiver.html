@@ -20,7 +20,8 @@
         const port = window.location.port;
         // 为每个观众生成一个简单的唯一 ID，用于区分不同观众
         const viewerId = 'v-' + Date.now() + '-' + Math.random().toString(16).slice(2);
-        const ws = new WebSocket(`ws://${host}:${port}/ws?role=receiver&id=${encodeURIComponent(viewerId)}`);
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${protocol}//${host}:${port}/ws?role=receiver&id=${encodeURIComponent(viewerId)}`);
         
         let peerConnection;
         const config = {

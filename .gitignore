@@ -1,0 +1,39 @@
+# 证书文件（包含私钥，不应提交到版本控制）
+server.key
+server.crt
+*.key
+*.crt
+*.pem
+*.csr
+
+# Go 编译文件
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+videostream
+
+# 测试二进制文件
+*.test
+
+# 输出目录
+*.out
+
+# Go 工作区文件
+go.work
+
+# 依赖目录（如果使用 vendor）
+vendor/
+
+# IDE 文件
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS 文件
+.DS_Store
+Thumbs.db
+

@@ -20,7 +20,8 @@
         const host = window.location.hostname;
         const port = window.location.port;
         // 连接 Go WebSocket（主播端只需要一条信令连接）
-        const ws = new WebSocket(`ws://${host}:${port}/ws?role=sender`);
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${protocol}//${host}:${port}/ws?role=sender`);
         
         let localStream;
         let currentFacingMode = 'environment'; // 'environment' 后置, 'user' 前置
